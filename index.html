@@ -91,9 +91,17 @@
       <button id="refBtn" class="btn w-full"><i class="fa-solid fa-image"></i> Upload gambar</button>
       <input id="refFile" type="file" accept="image/*" class="hidden">
       <div id="refBox" class="hidden space-y-2">
-        <p class="text-xs text-stone-400">Ketuk atau seret di gambar untuk mengambil warna.</p>
-        <div class="overflow-auto max-h-72 rounded bg-black/40">
-          <canvas id="ref" class="block mx-auto max-w-full h-auto touch-none cursor-crosshair"></canvas>
+        <p class="text-xs text-stone-400">Ketuk atau seret untuk mengambil warna. Ctrl + scroll untuk zoom.</p>
+        <div class="flex items-center gap-2">
+          <button id="refPan" class="btn" title="Mode geser (untuk layar sentuh)"><i class="fa-solid fa-hand"></i></button>
+          <span class="flex-1"></span>
+          <button id="refOut" class="btn" title="Zoom out"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+          <span id="refZoomTxt" class="text-xs font-mono w-12 text-center">100%</span>
+          <button id="refIn" class="btn" title="Zoom in"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+          <button id="refFit" class="btn" title="Sesuaikan lebar"><i class="fa-solid fa-expand"></i></button>
+        </div>
+        <div id="refView" class="overflow-auto rounded bg-black/40 h-[50vh] min-h-64 max-h-[85vh] resize-y">
+          <canvas id="ref" class="block touch-none cursor-crosshair"></canvas>
         </div>
         <div class="flex items-center gap-2">
           <span id="refSw" class="h-10 w-10 rounded border border-edge shrink-0"></span>
@@ -102,6 +110,12 @@
           <button id="refUse" class="btn on">Pakai</button>
         </div>
       </div>
+    </section>
+
+    <section class="bg-panel rounded-xl p-3 space-y-2">
+      <p class="text-sm font-semibold"><i class="fa-solid fa-download"></i> Download PNG</p>
+      <div id="dl" class="grid grid-cols-4 gap-2"></div>
+      <p class="text-xs text-stone-400">1× = ukuran asli. Tiap piksel diperbesar tanpa blur.</p>
     </section>
 
     <section id="data" class="grid grid-cols-2 gap-2"></section>
@@ -266,6 +280,7 @@ $(function () {
     $('#rw').val(S.w); $('#rh').val(S.h); $('#max').val(S.max);
     $('[data-tool]').each(function () { $(this).toggleClass('on', $(this).data('tool') === S.tool); });
     $('#grid').toggleClass('on', S.grid);
+    $('#dl .dl').each(function () { const k = +$(this).data('k'); $(this).find('.dl-size').text(`${S.w * k}×${S.h * k}`); });
     scheduleSave();
   };
   const setTool = t => { S.tool = t; render(); };
@@ -307,17 +322,21 @@ $(function () {
     return rows.join('\n') + '\n\n' + u.map(c => `${map[c]}=${c}`).join('\n') + '\n.=transparan';
   };
   const DATA = [
-    ['png', 'fa-download', 'Download', () => {
-      const k = Math.max(1, Math.ceil(512 / Math.max(S.w, S.h))), o = $('<canvas>').attr({ width: S.w * k, height: S.h * k })[0], c = o.getContext('2d');
-      S.px.forEach((col, i) => { if (col) { c.fillStyle = col; c.fillRect((i % S.w) * k, Math.floor(i / S.w) * k, k, k); } });
-      download(o.toDataURL('image/png'), `pixel-${S.w}x${S.h}.png`);
-    }],
     ['txt', 'fa-code', 'Export', () => { $('#out').val(toText()); $('#outbox').removeClass('hidden')[0].scrollIntoView({ behavior: 'smooth' }); }],
     ['imp', 'fa-file-import', 'Import', () => $('#file').click()],
     ['clr', 'fa-trash', 'Kosongkan', () => { pushUndo(); S.px = Array(S.w * S.h).fill(null); render(); }]
   ];
   DATA.forEach(([id, icon, label, fn]) => $('<button>', { id, class: 'btn', html: `<i class="fa-solid ${icon}"></i> ${label}` }).on('click', fn).appendTo('#data'));
   $('#copy').on('click', () => copyText($('#out').val()));
+
+  // Download PNG dengan skala 1× / 2× / 3× / 4× (piksel diperbesar tanpa blur)
+  const exportPng = k => {
+    const o = $('<canvas>').attr({ width: S.w * k, height: S.h * k })[0], c = o.getContext('2d');
+    S.px.forEach((col, i) => { if (col) { c.fillStyle = col; c.fillRect((i % S.w) * k, Math.floor(i / S.w) * k, k, k); } });
+    download(o.toDataURL('image/png'), k === 1 ? `pixel-${S.w}x${S.h}.png` : `pixel-${S.w}x${S.h}@${k}x.png`);
+  };
+  [1, 2, 3, 4].forEach(k => $('<button>', { class: 'btn dl flex flex-col items-center leading-tight', 'data-k': k, html: `<b>${k}×</b><span class="dl-size text-[10px] text-stone-400"></span>` })
+    .on('click', () => exportPng(k)).appendTo('#dl'));
 
   $('#file').on('change', function () {
     const f = this.files[0]; this.value = '';
@@ -361,6 +380,7 @@ $(function () {
       ref.width = Math.round(img.width * k); ref.height = Math.round(img.height * k);
       rctx.drawImage(img, 0, 0, ref.width, ref.height);
       $('#refBox').removeClass('hidden');
+      rz = 1; refView.scrollLeft = refView.scrollTop = 0; layoutRef();
     };
     img.src = URL.createObjectURL(f);
   });
@@ -372,9 +392,49 @@ $(function () {
     picked = '#' + [0, 1, 2].map(i => d[i].toString(16).padStart(2, '0')).join('');
     $('#refHex').text(picked.toUpperCase()); $('#refSw').css('background', picked);
   };
-  $(ref).on('pointerdown', ev => { sampling = true; ref.setPointerCapture(ev.originalEvent.pointerId); sample(ev.originalEvent); });
-  $(ref).on('pointermove', ev => { if (sampling) sample(ev.originalEvent); });
-  $(ref).on('pointerup pointercancel', () => { sampling = false; });
+  // zoom: rz = 1 berarti pas selebar kotak; ukuran canvas diatur lewat CSS, data piksel tetap
+  const refView = $('#refView')[0];
+  let rz = 1, refPan = false, rdrag = null;
+  const layoutRef = () => {
+    if (!ref.width || !refView.clientWidth) return;
+    const w = Math.round(refView.clientWidth * rz);
+    ref.style.width = w + 'px'; ref.style.height = Math.round(w * ref.height / ref.width) + 'px';
+    $('#refZoomTxt').text(Math.round(rz * 100) + '%');
+  };
+  const zoomRef = (nz, cx, cy) => {                              // titik di bawah kursor tetap di tempatnya
+    const r = ref.getBoundingClientRect(), b = refView.getBoundingClientRect();
+    const ax = cx ?? b.left + b.width / 2, ay = cy ?? b.top + b.height / 2;
+    const fx = clamp((ax - r.left) / r.width, 0, 1), fy = clamp((ay - r.top) / r.height, 0, 1);
+    rz = clamp(nz, 0.25, 16); layoutRef();
+    const n = ref.getBoundingClientRect();
+    refView.scrollLeft += n.left + fx * n.width - ax;
+    refView.scrollTop += n.top + fy * n.height - ay;
+  };
+  $('#refIn').on('click', () => zoomRef(rz * 1.25));
+  $('#refOut').on('click', () => zoomRef(rz / 1.25));
+  $('#refFit').on('click', () => { rz = 1; refView.scrollLeft = refView.scrollTop = 0; layoutRef(); });
+  $('#refPan').on('click', function () {
+    refPan = !refPan;
+    $(this).toggleClass('on', refPan);
+    $(ref).toggleClass('cursor-crosshair', !refPan).toggleClass('cursor-grab', refPan);
+  });
+  refView.addEventListener('wheel', e => {
+    if (!(e.ctrlKey || e.metaKey)) return;                       // tanpa Ctrl: scroll biasa
+    e.preventDefault(); zoomRef(rz * (e.deltaY < 0 ? 1.25 : 0.8), e.clientX, e.clientY);
+  }, { passive: false });
+  $(window).on('resize', layoutRef);
+
+  $(ref).on('pointerdown', ev => {
+    const e = ev.originalEvent; ref.setPointerCapture(e.pointerId);
+    if (refPan) { rdrag = { x: e.clientX, y: e.clientY, sl: refView.scrollLeft, st: refView.scrollTop }; return; }
+    sampling = true; sample(e);
+  });
+  $(ref).on('pointermove', ev => {
+    const e = ev.originalEvent;
+    if (rdrag) { refView.scrollLeft = rdrag.sl - (e.clientX - rdrag.x); refView.scrollTop = rdrag.st - (e.clientY - rdrag.y); }
+    else if (sampling) sample(e);
+  });
+  $(ref).on('pointerup pointercancel', () => { sampling = false; rdrag = null; });
   $('#refCopy').on('click', () => picked ? copyText(picked.toUpperCase()) : toast('Ambil warna dulu'));
   $('#refUse').on('click', () => {
     if (!picked) return toast('Ambil warna dulu');
