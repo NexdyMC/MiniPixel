@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Art Editor</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script>
+  // Semua variabel warna ada di sini
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          page: '#14161a',
+          panel: '#1f2228',
+          edge: '#383d47',
+          accent: { DEFAULT: '#6cc44a', dark: '#3a8a2b' },
+          check: { a: '#2a2d26', b: '#34382f' },
+          grid: 'rgba(0,0,0,0.35)'
+        }
+      }
+    }
+  }
+</script>
+<style type="text/tailwindcss">
+  canvas { image-rendering: pixelated; }
+  .btn { @apply py-2 px-2 rounded-lg border border-edge bg-panel text-sm text-stone-200 active:scale-95; }
+  .on { @apply bg-accent-dark border-accent text-white; }
+  .field { @apply w-full mt-1 rounded bg-page border border-edge px-2 py-1 text-sm; }
+</style>
+</head>
+<body class="bg-page text-stone-200 min-h-screen">
+<div class="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-[13rem_minmax(0,1fr)_22rem] gap-4">
+
+  <!-- ===== KOLOM 1: TAB (vertikal) ===== -->
+  <aside class="space-y-3 lg:sticky lg:top-4 lg:self-start">
+    <h1 class="text-lg font-bold"><i class="fa-solid fa-border-all text-accent"></i> Pixel Art</h1>
+    <div id="tabs" class="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-1"></div>
+    <button id="addTab" class="btn w-full"><i class="fa-solid fa-plus"></i> Tab baru</button>
+    <p id="saved" class="text-xs text-stone-400"></p>
+    <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
+      <button id="bakOut" class="btn text-xs"><i class="fa-solid fa-cloud-arrow-down"></i> Unduh cadangan</button>
+      <button id="bakIn" class="btn text-xs"><i class="fa-solid fa-cloud-arrow-up"></i> Pulihkan cadangan</button>
+    </div>
+    <input id="bakFile" type="file" accept="application/json,.json" class="hidden">
+  </aside>
+
+  <!-- ===== KOLOM 2: EDITOR ===== -->
+  <main class="space-y-4 min-w-0">
+    <p id="info" class="text-sm text-stone-400"></p>
+    <section id="tools" class="grid grid-cols-5 gap-2"></section>
+    <section id="actions" class="grid grid-cols-6 gap-2"></section>
+
+    <section id="wrap" class="overflow-auto max-h-[55vh] lg:max-h-[68vh] rounded-xl bg-black/40 p-2">
+      <canvas id="cv" class="block mx-auto touch-none"></canvas>
+    </section>
+
+    <section class="bg-panel rounded-xl p-3 space-y-3">
+      <div class="flex items-center gap-3">
+        <input id="color" type="color" value="#6cc44a" class="h-10 w-14 rounded bg-transparent">
+        <label class="text-sm w-28">Kode hex
+          <input id="hex" type="text" maxlength="7" spellcheck="false" autocapitalize="characters" placeholder="#RRGGBB" class="field font-mono uppercase">
+        </label>
+        <label class="text-sm flex-1">Maks. warna (0 = bebas)
+          <input id="max" type="number" min="0" max="64" value="0" class="field">
+        </label>
+      </div>
+      <div>
+        <p class="text-xs text-stone-400 mb-1">Warna yang dipakai</p>
+        <div id="palette" class="flex flex-wrap gap-2 min-h-8"></div>
+      </div>
+    </section>
+
+    <section class="bg-panel rounded-xl p-3 space-y-3">
+      <p class="text-sm font-semibold"><i class="fa-solid fa-up-right-and-down-left-from-center"></i> Ukuran canvas</p>
+      <div id="presets" class="grid grid-cols-4 gap-2"></div>
+      <div class="flex items-end gap-2">
+        <label class="text-xs flex-1">Lebar<input id="rw" type="number" min="1" max="128" value="16" class="field"></label>
+        <label class="text-xs flex-1">Tinggi<input id="rh" type="number" min="1" max="128" value="16" class="field"></label>
+        <button id="apply" class="btn on">Terapkan</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== KOLOM 3: GAMBAR REFERENSI + AKSI ===== -->
+  <aside class="space-y-4">
+    <section class="bg-panel rounded-xl p-3 space-y-3">
+      <p class="text-sm font-semibold"><i class="fa-solid fa-eye-dropper"></i> Ambil warna dari gambar</p>
+      <button id="refBtn" class="btn w-full"><i class="fa-solid fa-image"></i> Upload gambar</button>
+      <input id="refFile" type="file" accept="image/*" class="hidden">
+      <div id="refBox" class="hidden space-y-2">
+        <p class="text-xs text-stone-400">Ketuk atau seret di gambar untuk mengambil warna.</p>
+        <div class="overflow-auto max-h-72 rounded bg-black/40">
+          <canvas id="ref" class="block mx-auto max-w-full h-auto touch-none cursor-crosshair"></canvas>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="refSw" class="h-10 w-10 rounded border border-edge shrink-0"></span>
+          <code id="refHex" class="flex-1 text-lg font-mono">#------</code>
+          <button id="refCopy" class="btn"><i class="fa-solid fa-copy"></i></button>
+          <button id="refUse" class="btn on">Pakai</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="data" class="grid grid-cols-2 gap-2"></section>
+    <input id="file" type="file" accept="image/*" class="hidden">
+
+    <section id="outbox" class="hidden bg-panel rounded-xl p-3 space-y-2">
+      <textarea id="out" rows="8" readonly class="w-full rounded bg-page border border-edge p-2 text-xs font-mono"></textarea>
+      <button id="copy" class="btn w-full"><i class="fa-solid fa-copy"></i> Salin teks</button>
+    </section>
+  </aside>
+</div>
+
+<div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 bg-black/85 text-sm px-4 py-2 rounded-full z-50"></div>
+
+<script>
+$(function () {
+  const COL = tailwind.config.theme.extend.colors;
+  const CHK = [COL.check.b, COL.check.a], GRID = COL.grid;
+  const KEY = 'pixel-art-editor-v1', CODES = '0123456789abcdefghijklmnopqrstuvwxyz', HEX = /^#[0-9a-f]{6}$/i;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const cv = $('#cv')[0], ctx = cv.getContext('2d');
+
+  // S = gambar yang sedang dibuka; DB = seluruh data yang disimpan ke localStorage
+  const S = { id: 0, w: 16, h: 16, px: [], cell: 20, tool: 'pencil', color: '#6cc44a', grid: true, max: 0 };
+  const H = {};                                            // riwayat undo/redo per tab (tidak disimpan)
+  let DB = { version: 1, active: 0, settings: {}, data: [] };
+
+  // ---------- util ----------
+  const toast = msg => $('#toast').text(msg).stop(true).fadeIn(120).delay(1600).fadeOut(250);
+  const download = (href, name) => $('<a>', { href, download: name })[0].click();
+  const copyText = t => navigator.clipboard.writeText(t).then(() => toast('Disalin: ' + (t.length > 12 ? 'teks' : t)), () => toast('Gagal menyalin'));
+  const used = () => [...new Set(S.px.filter(Boolean))];
+  const hist = () => H[S.id] ??= { undo: [], redo: [] };
+  const snap = () => ({ w: S.w, h: S.h, px: S.px.slice() });
+  const restore = o => { S.w = o.w; S.h = o.h; S.px = o.px.slice(); };
+  const pushUndo = () => { const h = hist(); h.undo.push(snap()); if (h.undo.length > 100) h.undo.shift(); h.redo = []; };
+  const allowed = c => !S.max || used().includes(c) || used().length < S.max || (toast('Batas ' + S.max + ' warna tercapai'), false);
+  const setPx = (x, y, c) => { if (x >= 0 && y >= 0 && x < S.w && y < S.h) S.px[y * S.w + x] = c; };
+
+  // ---------- penyimpanan ----------
+  const blank = () => ({ w: 16, h: 16, zoom: 0, palette: [], px: Array(256).fill(-1) });
+  const encode = () => {
+    const pal = used(), at = Object.fromEntries(pal.map((c, i) => [c, i]));
+    return { w: S.w, h: S.h, zoom: S.cell, palette: pal, px: S.px.map(c => c ? at[c] : -1) };
+  };
+  const decode = im => { S.w = im.w; S.h = im.h; S.px = im.px.map(i => i >= 0 ? im.palette[i] : null); S.cell = im.zoom || 0; };
+  const validImage = im => im && Number.isInteger(im.w) && Number.isInteger(im.h) && im.w >= 1 && im.h >= 1 && im.w <= 128 && im.h <= 128
+    && Array.isArray(im.palette) && im.palette.every(c => HEX.test(c)) && Array.isArray(im.px) && im.px.length === im.w * im.h
+    && im.px.every(i => Number.isInteger(i) && i >= -1 && i < im.palette.length);
+  const validDB = o => o && Array.isArray(o.data) && o.data.length > 0
+    && o.data.every(t => t && typeof t.tab === 'string' && Number.isFinite(t.id) && validImage(t.image));
+
+  const setSaved = ok => $('#saved').html(ok === null ? '<i class="fa-solid fa-ellipsis"></i> Menyimpan…'
+    : ok ? '<i class="fa-solid fa-check text-accent"></i> Tersimpan ' + new Date().toTimeString().slice(0, 5)
+    : '<i class="fa-solid fa-triangle-exclamation text-red-400"></i> Gagal menyimpan');
+  const sync = () => {
+    const t = DB.data.find(t => t.id === S.id);
+    if (t) t.image = encode();
+    DB.active = S.id; DB.settings = { color: S.color, max: S.max, grid: S.grid };
+  };
+  const save = () => {
+    sync();
+    try { localStorage.setItem(KEY, JSON.stringify(DB)); setSaved(true); }
+    catch (e) { setSaved(false); toast('Penyimpanan penuh atau diblokir. Unduh cadangan.'); }
+  };
+  let timer;
+  const scheduleSave = () => { setSaved(null); clearTimeout(timer); timer = setTimeout(save, 500); };
+
+  // ---------- tab ----------
+  const renderTabs = () => {
+    $('#tabs').empty().append(DB.data.map(t => {
+      const row = $('<div>', { class: 'flex items-center gap-1 shrink-0 min-w-[9rem] lg:min-w-0 rounded-lg border px-2 py-1 text-sm ' + (t.id === S.id ? 'on' : 'border-edge bg-panel') });
+      $('<button>', { class: 'tab-open flex-1 text-left truncate py-1', 'data-id': t.id, text: t.tab }).appendTo(row);
+      $('<button>', { class: 'tab-ren text-xs opacity-70', 'data-id': t.id, html: '<i class="fa-solid fa-pen"></i>' }).appendTo(row);
+      $('<button>', { class: 'tab-del text-xs opacity-70', 'data-id': t.id, html: '<i class="fa-solid fa-xmark"></i>' }).appendTo(row);
+      return row;
+    }));
+  };
+  const fit = () => { S.cell = clamp(Math.floor(Math.min(($('#wrap').width() - 16) / S.w, 380 / S.h)), 2, 64); };
+  const openTab = id => {
+    sync();
+    const t = DB.data.find(t => t.id === id) || DB.data[0];
+    S.id = t.id; decode(t.image);
+    S.cell ? S.cell = clamp(S.cell, 2, 64) : fit();
+    renderTabs(); render();
+  };
+  const newTab = () => {
+    let id = Date.now(); while (DB.data.some(t => t.id === id)) id++;
+    DB.data.push({ tab: 'Gambar ' + (DB.data.length + 1), id, image: blank() });
+    return id;
+  };
+  $('#addTab').on('click', () => openTab(newTab()));
+  $('#tabs').on('click', '.tab-open', function () { openTab($(this).data('id')); });
+  $('#tabs').on('click', '.tab-ren', function () {
+    const t = DB.data.find(t => t.id === $(this).data('id')), name = (prompt('Nama tab', t.tab) || '').trim().slice(0, 30);
+    if (name) { t.tab = name; renderTabs(); scheduleSave(); }
+  });
+  $('#tabs').on('click', '.tab-del', function () {
+    const id = $(this).data('id'), t = DB.data.find(t => t.id === id);
+    if (!confirm(`Hapus tab "${t.tab}"?`)) return;
+    DB.data = DB.data.filter(x => x.id !== id); delete H[id];
+    if (!DB.data.length) newTab();
+    id === S.id ? openTab(DB.data[0].id) : (renderTabs(), scheduleSave());
+  });
+
+  // ---------- cadangan ----------
+  $('#bakOut').on('click', () => { sync(); download('data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(DB, null, 1)), 'pixel-art-cadangan.json'); });
+  $('#bakIn').on('click', () => $('#bakFile').click());
+  $('#bakFile').on('change', function () {
+    const f = this.files[0]; this.value = '';
+    if (!f) return;
+    f.text().then(txt => {
+      let o; try { o = JSON.parse(txt); } catch (e) { o = null; }
+      if (!validDB(o)) return toast('File cadangan tidak valid');
+      if (!confirm('Ganti semua gambar dengan isi cadangan?')) return;
+      DB = { version: 1, active: o.active, settings: o.settings || {}, data: o.data };
+      Object.keys(H).forEach(k => delete H[k]);
+      applyDB();
+    });
+  });
+
+  // ---------- menggambar ----------
+  const line = (x0, y0, x1, y1, fn) => {                       // Bresenham
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    for (let e = dx + dy; ; ) {
+      fn(x0, y0);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * e;
+      if (e2 >= dy) { e += dy; x0 += sx; }
+      if (e2 <= dx) { e += dx; y0 += sy; }
+    }
+  };
+  const fill = (x, y, c) => {
+    const target = S.px[y * S.w + x];
+    if (target === c) return;
+    const stack = [[x, y]];
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      if (a < 0 || b < 0 || a >= S.w || b >= S.h || S.px[b * S.w + a] !== target) continue;
+      S.px[b * S.w + a] = c;
+      stack.push([a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]);
+    }
+  };
+
+  // ---------- tampilan ----------
+  const render = () => {
+    cv.width = S.w * S.cell; cv.height = S.h * S.cell;
+    S.px.forEach((c, i) => {
+      const x = i % S.w, y = Math.floor(i / S.w);
+      ctx.fillStyle = c || CHK[(x + y) % 2];
+      ctx.fillRect(x * S.cell, y * S.cell, S.cell, S.cell);
+    });
+    if (S.grid && S.cell >= 6) {
+      ctx.strokeStyle = GRID; ctx.lineWidth = 1; ctx.beginPath();
+      for (let i = 0; i <= S.w; i++) { ctx.moveTo(i * S.cell + 0.5, 0); ctx.lineTo(i * S.cell + 0.5, cv.height); }
+      for (let j = 0; j <= S.h; j++) { ctx.moveTo(0, j * S.cell + 0.5); ctx.lineTo(cv.width, j * S.cell + 0.5); }
+      ctx.stroke();
+    }
+    const u = used();
+    $('#palette').html(u.map(c => `<button data-c="${c}" class="sw h-8 w-8 rounded border border-edge" style="background:${c}" title="${c}"></button>`).join('') || '<span class="text-xs text-stone-500">Belum ada</span>');
+    $('#info').text(`${S.w}×${S.h} px · zoom ${S.cell}× · ${u.length} warna${S.max ? ' / maks ' + S.max : ''}`);
+    $('#rw').val(S.w); $('#rh').val(S.h); $('#max').val(S.max);
+    $('[data-tool]').each(function () { $(this).toggleClass('on', $(this).data('tool') === S.tool); });
+    $('#grid').toggleClass('on', S.grid);
+    scheduleSave();
+  };
+  const setTool = t => { S.tool = t; render(); };
+  const setColor = (c, keepHex) => { S.color = c; $('#color').val(c); if (!keepHex) $('#hex').val(c.toUpperCase()).removeClass('border-red-500'); };
+
+  // ---------- tombol (dibuat dari daftar) ----------
+  const TOOLS = [['pencil', 'fa-pencil', 'Pensil'], ['eraser', 'fa-eraser', 'Hapus'], ['fill', 'fa-fill-drip', 'Cat'], ['picker', 'fa-eye-dropper', 'Pipet'], ['pan', 'fa-hand', 'Geser']];
+  TOOLS.forEach(([id, icon, label]) => $('#tools').append(
+    `<button data-tool="${id}" class="btn flex flex-col items-center gap-1 text-xs"><i class="fa-solid ${icon}"></i>${label}</button>`));
+  $('#tools').on('click', '[data-tool]', function () { setTool($(this).data('tool')); });
+
+  const undoRedo = (from, to) => { const h = hist(); if (!h[from].length) return; h[to].push(snap()); restore(h[from].pop()); fit(); render(); };
+  const zoom = k => { S.cell = clamp(S.cell + k * Math.max(1, Math.round(S.cell * 0.25)), 2, 64); render(); };
+  const ACTIONS = [
+    ['undo', 'fa-rotate-left', () => undoRedo('undo', 'redo')],
+    ['redo', 'fa-rotate-right', () => undoRedo('redo', 'undo')],
+    ['zin', 'fa-magnifying-glass-plus', () => zoom(1)],
+    ['zout', 'fa-magnifying-glass-minus', () => zoom(-1)],
+    ['fit', 'fa-expand', () => { fit(); render(); }],
+    ['grid', 'fa-border-all', () => { S.grid = !S.grid; render(); }]
+  ];
+  ACTIONS.forEach(([id, icon, fn]) => $('<button>', { id, class: 'btn', html: `<i class="fa-solid ${icon}"></i>` }).on('click', fn).appendTo('#actions'));
+
+  // ---------- ukuran canvas ----------
+  const resize = (w, h) => {
+    w = clamp(+w || 1, 1, 128); h = clamp(+h || 1, 1, 128);
+    pushUndo();
+    const px = Array(w * h).fill(null);
+    for (let y = 0; y < Math.min(h, S.h); y++) for (let x = 0; x < Math.min(w, S.w); x++) px[y * w + x] = S.px[y * S.w + x];
+    S.w = w; S.h = h; S.px = px; fit(); render();
+  };
+  [8, 16, 32, 64].forEach(n => $('<button>', { class: 'btn', text: `${n}×${n}` }).on('click', () => resize(n, n)).appendTo('#presets'));
+  $('#apply').on('click', () => resize($('#rw').val(), $('#rh').val()));
+
+  // ---------- ekspor / impor ----------
+  const toText = () => {
+    const u = used(), map = Object.fromEntries(u.map((c, i) => [c, CODES[i]]));
+    const rows = Array.from({ length: S.h }, (_, y) => Array.from({ length: S.w }, (_, x) => map[S.px[y * S.w + x]] ?? '.').join(''));
+    return rows.join('\n') + '\n\n' + u.map(c => `${map[c]}=${c}`).join('\n') + '\n.=transparan';
+  };
+  const DATA = [
+    ['png', 'fa-download', 'Download', () => {
+      const k = Math.max(1, Math.ceil(512 / Math.max(S.w, S.h))), o = $('<canvas>').attr({ width: S.w * k, height: S.h * k })[0], c = o.getContext('2d');
+      S.px.forEach((col, i) => { if (col) { c.fillStyle = col; c.fillRect((i % S.w) * k, Math.floor(i / S.w) * k, k, k); } });
+      download(o.toDataURL('image/png'), `pixel-${S.w}x${S.h}.png`);
+    }],
+    ['txt', 'fa-code', 'Export', () => { $('#out').val(toText()); $('#outbox').removeClass('hidden')[0].scrollIntoView({ behavior: 'smooth' }); }],
+    ['imp', 'fa-file-import', 'Import', () => $('#file').click()],
+    ['clr', 'fa-trash', 'Kosongkan', () => { pushUndo(); S.px = Array(S.w * S.h).fill(null); render(); }]
+  ];
+  DATA.forEach(([id, icon, label, fn]) => $('<button>', { id, class: 'btn', html: `<i class="fa-solid ${icon}"></i> ${label}` }).on('click', fn).appendTo('#data'));
+  $('#copy').on('click', () => copyText($('#out').val()));
+
+  $('#file').on('change', function () {
+    const f = this.files[0]; this.value = '';
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      if (img.width > 128 || img.height > 128) return toast('Gambar maksimal 128×128 px');
+      const o = $('<canvas>').attr({ width: img.width, height: img.height })[0], c = o.getContext('2d');
+      c.drawImage(img, 0, 0);
+      const d = c.getImageData(0, 0, img.width, img.height).data;
+      pushUndo();
+      S.w = img.width; S.h = img.height;
+      S.px = Array.from({ length: S.w * S.h }, (_, i) => d[i * 4 + 3] < 128 ? null : '#' + [0, 1, 2].map(k => d[i * 4 + k].toString(16).padStart(2, '0')).join(''));
+      fit(); render();
+    };
+    img.src = URL.createObjectURL(f);
+  });
+
+  // ---------- warna ----------
+  $('#color').on('input', function () { setColor(this.value); render(); });
+  $('#hex').on('input', function () {                           // #RRGGBB, RRGGBB, atau 3 digit
+    let v = this.value.trim().replace(/^#?/, '#').toLowerCase();
+    if (/^#[0-9a-f]{3}$/.test(v)) v = '#' + [...v.slice(1)].map(d => d + d).join('');
+    const ok = HEX.test(v);
+    $(this).toggleClass('border-red-500', !ok && this.value.length > 0);
+    if (ok) { setColor(v, true); scheduleSave(); }
+  });
+  $('#max').on('input', function () { S.max = clamp(+this.value || 0, 0, 64); render(); });
+  $('#palette').on('click', '.sw', function () { setColor($(this).data('c')); if (['eraser', 'picker', 'pan'].includes(S.tool)) setTool('pencil'); else render(); });
+
+  // ---------- ambil warna dari gambar ----------
+  const ref = $('#ref')[0], rctx = ref.getContext('2d', { willReadFrequently: true });
+  let picked = null, sampling = false;
+  $('#refBtn').on('click', () => $('#refFile').click());
+  $('#refFile').on('change', function () {
+    const f = this.files[0]; this.value = '';
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      ref.width = Math.round(img.width * k); ref.height = Math.round(img.height * k);
+      rctx.drawImage(img, 0, 0, ref.width, ref.height);
+      $('#refBox').removeClass('hidden');
+    };
+    img.src = URL.createObjectURL(f);
+  });
+  const sample = e => {
+    const r = ref.getBoundingClientRect();
+    const x = clamp(Math.floor((e.clientX - r.left) * ref.width / r.width), 0, ref.width - 1);
+    const y = clamp(Math.floor((e.clientY - r.top) * ref.height / r.height), 0, ref.height - 1);
+    const d = rctx.getImageData(x, y, 1, 1).data;
+    picked = '#' + [0, 1, 2].map(i => d[i].toString(16).padStart(2, '0')).join('');
+    $('#refHex').text(picked.toUpperCase()); $('#refSw').css('background', picked);
+  };
+  $(ref).on('pointerdown', ev => { sampling = true; ref.setPointerCapture(ev.originalEvent.pointerId); sample(ev.originalEvent); });
+  $(ref).on('pointermove', ev => { if (sampling) sample(ev.originalEvent); });
+  $(ref).on('pointerup pointercancel', () => { sampling = false; });
+  $('#refCopy').on('click', () => picked ? copyText(picked.toUpperCase()) : toast('Ambil warna dulu'));
+  $('#refUse').on('click', () => {
+    if (!picked) return toast('Ambil warna dulu');
+    setColor(picked); toast('Warna dipakai: ' + picked.toUpperCase());
+    ['eraser', 'picker', 'pan'].includes(S.tool) ? setTool('pencil') : render();
+  });
+
+  // ---------- menggambar di canvas (mouse & sentuh) ----------
+  const cellAt = e => { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / S.cell), Math.floor((e.clientY - r.top) / S.cell)]; };
+  let drag = null;
+  $(cv).on('pointerdown', ev => {
+    const e = ev.originalEvent, [x, y] = cellAt(e), wrap = $('#wrap')[0];
+    if (x < 0 || y < 0 || x >= S.w || y >= S.h) return;
+    cv.setPointerCapture(e.pointerId);
+    if (S.tool === 'pan') { drag = { pan: true, px: e.clientX, py: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop }; return; }
+    if (S.tool === 'picker') { const c = S.px[y * S.w + x]; if (c) setColor(c); return setTool('pencil'); }
+    if (S.tool !== 'eraser' && !allowed(S.color)) return;
+    pushUndo();
+    if (S.tool === 'fill') { fill(x, y, S.color); return render(); }
+    drag = { x, y, c: S.tool === 'eraser' ? null : S.color };
+    setPx(x, y, drag.c); render();
+  });
+  $(cv).on('pointermove', ev => {
+    if (!drag) return;
+    const e = ev.originalEvent, wrap = $('#wrap')[0];
+    if (drag.pan) { wrap.scrollLeft = drag.sl - (e.clientX - drag.px); wrap.scrollTop = drag.st - (e.clientY - drag.py); return; }
+    const [x, y] = cellAt(e);
+    line(drag.x, drag.y, x, y, (a, b) => setPx(a, b, drag.c));
+    drag.x = x; drag.y = y; render();
+  });
+  $(cv).on('pointerup pointercancel', () => { drag = null; });
+
+  // ---------- muat data saat dibuka ----------
+  const applyDB = () => {
+    const s = DB.settings || {};
+    S.color = HEX.test(s.color) ? s.color.toLowerCase() : S.color;
+    S.max = clamp(+s.max || 0, 0, 64);
+    S.grid = s.grid !== false;
+    setColor(S.color);
+    S.id = 0;
+    openTab(DB.data.some(t => t.id === DB.active) ? DB.active : DB.data[0].id);
+  };
+  try { const o = JSON.parse(localStorage.getItem(KEY)); if (validDB(o)) DB = { version: 1, active: o.active, settings: o.settings || {}, data: o.data }; } catch (e) { }
+  if (!DB.data.length) newTab();
+  applyDB();
+  $(window).on('pagehide', save);
+  $(document).on('visibilitychange', () => { if (document.hidden) save(); });
+});
+</script>
+</body>
+</html>
